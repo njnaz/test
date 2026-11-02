@@ -1,0 +1,381 @@
+{
+  "name": "OpenShift CronJob Monitor",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "description": "Checks OpenShift CronJobs in a project/namespace and emails you when the latest run failed or appears to have been missed."
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## OpenShift CronJob Monitor\n\n**What it does**\n1. Runs on a schedule\n2. Reads CronJobs + recent Jobs from your OpenShift project\n3. Emails you if a watched CronJob failed or looks missed\n\n**Edit these first**\n1. **Config** node — API URL, namespace, cronjob names, email, thresholds\n2. Create an n8n **Header Auth** credential named `OpenShift SA Token`\n   - Name: `Authorization`\n   - Value: `Bearer <service-account-token>`\n3. Create an n8n **SMTP** credential (or swap the Email node for Gmail/Outlook)\n4. Activate the workflow\n\n**OpenShift SA needs** `get/list` on `cronjobs` and `jobs` in the target namespace.",
+        "height": 460,
+        "width": 420,
+        "color": 5
+      },
+      "id": "sticky-overview",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-700, 80]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-400, 360],
+      "notes": "Change the interval to match how often you want to poll OpenShift."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-api",
+              "name": "openshiftApiUrl",
+              "value": "https://api.YOUR_CLUSTER.example.com:6443",
+              "type": "string"
+            },
+            {
+              "id": "cfg-ns",
+              "name": "namespace",
+              "value": "your-project-name",
+              "type": "string"
+            },
+            {
+              "id": "cfg-jobs",
+              "name": "cronJobNames",
+              "value": "exam-calendar-sync",
+              "type": "string"
+            },
+            {
+              "id": "cfg-grace",
+              "name": "missedGraceMinutes",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "cfg-lookback",
+              "name": "jobLookbackHours",
+              "value": 24,
+              "type": "number"
+            },
+            {
+              "id": "cfg-email-to",
+              "name": "alertEmailTo",
+              "value": "you@example.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg-email-from",
+              "name": "alertEmailFrom",
+              "value": "n8n-alerts@example.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg-subject",
+              "name": "alertSubjectPrefix",
+              "value": "[OpenShift CronJob Alert]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-node",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-160, 360],
+      "notes": "EDIT ME: set cluster API URL, project/namespace, comma-separated CronJob names, grace period, and alert email addresses."
+    },
+    {
+      "parameters": {
+        "content": "## Config tips\n\n- `cronJobNames`: comma-separated list, e.g. `exam-calendar-sync,nightly-backup`\n- Leave blank to watch **all** CronJobs in the namespace\n- `missedGraceMinutes`: how long after the schedule before a missing successful run is an alert\n- `jobLookbackHours`: only inspect Jobs newer than this window",
+        "height": 280,
+        "width": 340,
+        "color": 4
+      },
+      "id": "sticky-config",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-220, 40]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.openshiftApiUrl }}/apis/batch/v1/namespaces/{{ $json.namespace }}/cronjobs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "get-cronjobs",
+      "name": "Get CronJobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [100, 360],
+      "notes": "Attach Header Auth credential: Authorization = Bearer <token>. Toggle allowUnauthorizedCerts off if your cluster has a trusted CA.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_OPENSHIFT_HEADER_AUTH_CRED_ID",
+          "name": "OpenShift SA Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.openshiftApiUrl }}/apis/batch/v1/namespaces/{{ $('Config').item.json.namespace }}/jobs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "get-jobs",
+      "name": "Get Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 360],
+      "notes": "Uses the same OpenShift SA token credential as Get CronJobs.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_OPENSHIFT_HEADER_AUTH_CRED_ID",
+          "name": "OpenShift SA Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config').first().json;\nconst cronJobList = $('Get CronJobs').first().json;\nconst jobList = $('Get Jobs').first().json;\n\nconst watchedNames = String(cfg.cronJobNames || '')\n  .split(',')\n  .map((s) => s.trim())\n  .filter(Boolean);\n\nconst missedGraceMinutes = Number(cfg.missedGraceMinutes || 30);\nconst jobLookbackHours = Number(cfg.jobLookbackHours || 24);\nconst now = Date.now();\nconst lookbackCutoff = now - jobLookbackHours * 60 * 60 * 1000;\n\nfunction parseCronFields(schedule) {\n  if (!schedule || typeof schedule !== 'string') return null;\n  const parts = schedule.trim().split(/\\s+/);\n  if (parts.length < 5) return null;\n  return {\n    minute: parts[0],\n    hour: parts[1],\n    dayOfMonth: parts[2],\n    month: parts[3],\n    dayOfWeek: parts[4],\n  };\n}\n\n// Rough expected interval for common schedules. Used only as a missed-run heuristic.\nfunction estimateIntervalMinutes(schedule) {\n  const fields = parseCronFields(schedule);\n  if (!fields) return 60;\n\n  if (/^\\*\\/(\\d+)$/.test(fields.minute)) {\n    return Number(fields.minute.slice(2));\n  }\n  if (fields.minute !== '*' && fields.hour === '*') return 60;\n  if (fields.minute !== '*' && fields.hour !== '*' && fields.dayOfMonth === '*' && fields.month === '*' && (fields.dayOfWeek === '*' || fields.dayOfWeek === '?')) {\n    return 24 * 60;\n  }\n  if (fields.dayOfWeek !== '*' && fields.dayOfWeek !== '?') return 7 * 24 * 60;\n  return 60;\n}\n\nfunction ownerCronJobName(job) {\n  const owners = job.metadata?.ownerReferences || [];\n  const owner = owners.find((o) => o.kind === 'CronJob');\n  if (owner?.name) return owner.name;\n\n  const labels = job.metadata?.labels || {};\n  return (\n    labels['batch.kubernetes.io/cron-job-name'] ||\n    labels['cronjob.kubernetes.io/cron-job-name'] ||\n    labels['job-name']?.replace(/-\\d{8,}$/, '') ||\n    null\n  );\n}\n\nfunction jobOutcome(job) {\n  const status = job.status || {};\n  const conditions = status.conditions || [];\n  const complete = conditions.find((c) => c.type === 'Complete' && c.status === 'True');\n  const failed = conditions.find((c) => c.type === 'Failed' && c.status === 'True');\n\n  if (failed || Number(status.failed || 0) > 0) {\n    return {\n      state: 'failed',\n      reason: failed?.reason || 'JobFailed',\n      message: failed?.message || `failed pods=${status.failed}`,\n      finishedAt: failed?.lastTransitionTime || job.metadata?.creationTimestamp,\n    };\n  }\n\n  if (complete || Number(status.succeeded || 0) > 0) {\n    return {\n      state: 'succeeded',\n      reason: complete?.reason || 'Complete',\n      message: complete?.message || 'Job completed successfully',\n      finishedAt: complete?.lastTransitionTime || job.metadata?.creationTimestamp,\n    };\n  }\n\n  return {\n    state: 'running_or_pending',\n    reason: 'NotFinished',\n    message: `active=${status.active || 0} succeeded=${status.succeeded || 0} failed=${status.failed || 0}`,\n    finishedAt: null,\n  };\n}\n\nconst allCronJobs = cronJobList.items || [];\nconst cronJobs = watchedNames.length\n  ? allCronJobs.filter((cj) => watchedNames.includes(cj.metadata?.name))\n  : allCronJobs;\n\nif (watchedNames.length) {\n  const found = new Set(cronJobs.map((cj) => cj.metadata?.name));\n  for (const name of watchedNames) {\n    if (!found.has(name)) {\n      // Synthetic alert when a configured CronJob is missing from the namespace.\n      cronJobs.push({\n        metadata: { name },\n        spec: { schedule: '' },\n        status: {},\n        __missingFromApi: true,\n      });\n    }\n  }\n}\n\nconst jobs = (jobList.items || [])\n  .filter((job) => {\n    const created = Date.parse(job.metadata?.creationTimestamp || 0);\n    return !Number.isNaN(created) && created >= lookbackCutoff;\n  })\n  .sort((a, b) => Date.parse(b.metadata.creationTimestamp) - Date.parse(a.metadata.creationTimestamp));\n\nconst alerts = [];\nconst healthy = [];\n\nfor (const cronJob of cronJobs) {\n  const name = cronJob.metadata?.name || 'unknown';\n  const schedule = cronJob.spec?.schedule || '';\n  const suspend = Boolean(cronJob.spec?.suspend);\n  const lastScheduleTime = cronJob.status?.lastScheduleTime || null;\n  const lastSuccessfulTime = cronJob.status?.lastSuccessfulTime || null;\n\n  if (cronJob.__missingFromApi) {\n    alerts.push({\n      cronJobName: name,\n      issue: 'missing_cronjob',\n      severity: 'critical',\n      details: `CronJob '${name}' was configured in n8n but was not found in namespace '${cfg.namespace}'.`,\n      schedule,\n      lastScheduleTime,\n      lastSuccessfulTime,\n      latestJobName: null,\n      latestJobState: null,\n    });\n    continue;\n  }\n\n  if (suspend) {\n    healthy.push({\n      cronJobName: name,\n      status: 'suspended',\n      details: 'CronJob is suspended; skipping failure/missed checks.',\n    });\n    continue;\n  }\n\n  const relatedJobs = jobs.filter((job) => ownerCronJobName(job) === name);\n  const latestJob = relatedJobs[0] || null;\n  const latest = latestJob ? jobOutcome(latestJob) : null;\n\n  if (latest?.state === 'failed') {\n    alerts.push({\n      cronJobName: name,\n      issue: 'job_failed',\n      severity: 'critical',\n      details: `Latest Job '${latestJob.metadata.name}' failed: ${latest.message}`,\n      schedule,\n      lastScheduleTime,\n      lastSuccessfulTime,\n      latestJobName: latestJob.metadata.name,\n      latestJobState: latest.state,\n      latestJobReason: latest.reason,\n    });\n    continue;\n  }\n\n  // Missed-run heuristic: if OpenShift recorded a schedule time, require a success afterward (with grace).\n  if (lastScheduleTime) {\n    const scheduledAt = Date.parse(lastScheduleTime);\n    const graceMs = missedGraceMinutes * 60 * 1000;\n    const dueBy = scheduledAt + graceMs;\n\n    if (now > dueBy) {\n      const successAfterSchedule = relatedJobs.find((job) => {\n        const outcome = jobOutcome(job);\n        if (outcome.state !== 'succeeded') return false;\n        const finished = Date.parse(outcome.finishedAt || job.metadata.creationTimestamp);\n        return finished >= scheduledAt;\n      });\n\n      const stillRunning = latest?.state === 'running_or_pending'\n        && Date.parse(latestJob.metadata.creationTimestamp) >= scheduledAt;\n\n      if (!successAfterSchedule && !stillRunning) {\n        alerts.push({\n          cronJobName: name,\n          issue: 'missed_or_unsuccessful_run',\n          severity: 'warning',\n          details: `CronJob scheduled at ${lastScheduleTime} but no successful Job finished within ${missedGraceMinutes} minutes.`,\n          schedule,\n          lastScheduleTime,\n          lastSuccessfulTime,\n          latestJobName: latestJob?.metadata?.name || null,\n          latestJobState: latest?.state || 'none',\n        });\n        continue;\n      }\n    }\n  } else {\n    // No lastScheduleTime yet — fall back to expected cadence from the cron expression.\n    const intervalMinutes = estimateIntervalMinutes(schedule);\n    const expectedBy = now - (intervalMinutes + missedGraceMinutes) * 60 * 1000;\n    const recentSuccess = relatedJobs.find((job) => jobOutcome(job).state === 'succeeded');\n\n    if (!recentSuccess) {\n      const newestCreated = latestJob ? Date.parse(latestJob.metadata.creationTimestamp) : 0;\n      if (!latestJob || newestCreated < expectedBy) {\n        alerts.push({\n          cronJobName: name,\n          issue: 'no_recent_successful_run',\n          severity: 'warning',\n          details: `No successful Job found in the last ~${intervalMinutes + missedGraceMinutes} minutes for schedule '${schedule || 'unknown'}'.`,\n          schedule,\n          lastScheduleTime,\n          lastSuccessfulTime,\n          latestJobName: latestJob?.metadata?.name || null,\n          latestJobState: latest?.state || 'none',\n        });\n        continue;\n      }\n    }\n  }\n\n  healthy.push({\n    cronJobName: name,\n    status: latest?.state || 'ok',\n    details: latest\n      ? `Latest Job '${latestJob.metadata.name}' is ${latest.state}.`\n      : 'No recent jobs in lookback window, but no missed-run signal yet.',\n    lastScheduleTime,\n    lastSuccessfulTime,\n  });\n}\n\nconst needsAlert = alerts.length > 0;\nconst checkedAt = new Date().toISOString();\n\nconst subjectNames = alerts.map((a) => a.cronJobName).join(', ') || 'none';\nconst subject = `${cfg.alertSubjectPrefix} ${alerts.length} issue(s): ${subjectNames}`;\n\nconst lines = [];\nlines.push(`OpenShift CronJob monitor found ${alerts.length} issue(s).`);\nlines.push(`Cluster API: ${cfg.openshiftApiUrl}`);\nlines.push(`Namespace/project: ${cfg.namespace}`);\nlines.push(`Checked at: ${checkedAt}`);\nlines.push('');\n\nfor (const alert of alerts) {\n  lines.push(`- [${alert.severity}] ${alert.cronJobName}`);\n  lines.push(`  issue: ${alert.issue}`);\n  lines.push(`  details: ${alert.details}`);\n  if (alert.schedule) lines.push(`  schedule: ${alert.schedule}`);\n  if (alert.lastScheduleTime) lines.push(`  lastScheduleTime: ${alert.lastScheduleTime}`);\n  if (alert.lastSuccessfulTime) lines.push(`  lastSuccessfulTime: ${alert.lastSuccessfulTime}`);\n  if (alert.latestJobName) lines.push(`  latestJob: ${alert.latestJobName} (${alert.latestJobState})`);\n  lines.push('');\n}\n\nif (healthy.length) {\n  lines.push('Healthy / skipped:');\n  for (const item of healthy) {\n    lines.push(`- ${item.cronJobName}: ${item.details}`);\n  }\n}\n\nreturn [\n  {\n    json: {\n      needsAlert,\n      alertCount: alerts.length,\n      namespace: cfg.namespace,\n      openshiftApiUrl: cfg.openshiftApiUrl,\n      alertEmailTo: cfg.alertEmailTo,\n      alertEmailFrom: cfg.alertEmailFrom,\n      subject,\n      body: lines.join('\\n'),\n      alerts,\n      healthy,\n      checkedAt,\n    },\n  },\n];"
+      },
+      "id": "analyze-status",
+      "name": "Analyze CronJob Health",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 360],
+      "notes": "Detects failed Jobs, missed successful runs after lastScheduleTime, missing CronJobs, and suspended CronJobs."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "needs-alert-condition",
+              "leftValue": "={{ $json.needsAlert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-alert",
+      "name": "Needs Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [820, 360]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.alertEmailFrom }}",
+        "toEmail": "={{ $json.alertEmailTo }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1080, 260],
+      "notes": "Attach your SMTP credential here. You can replace this node with Gmail, Microsoft Outlook, or another mail node if preferred.",
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_SMTP_CRED_ID",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok-status",
+              "name": "status",
+              "value": "ok_no_alert",
+              "type": "string"
+            },
+            {
+              "id": "ok-count",
+              "name": "alertCount",
+              "value": "={{ $json.alertCount }}",
+              "type": "number"
+            },
+            {
+              "id": "ok-checked",
+              "name": "checkedAt",
+              "value": "={{ $json.checkedAt }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "no-alert",
+      "name": "No Alert Needed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1080, 480]
+    },
+    {
+      "parameters": {
+        "content": "## Auth setup (OpenShift)\n\n```bash\noc create sa n8n-cron-monitor -n your-project-name\noc policy add-role-to-user view system:serviceaccount:your-project-name:n8n-cron-monitor -n your-project-name\noc create token n8n-cron-monitor -n your-project-name --duration=8760h\n```\n\nPut the token in n8n Header Auth as:\n`Authorization: Bearer <token>`\n\nAPI URL example:\n`https://api.cluster.example.com:6443`",
+        "height": 360,
+        "width": 420,
+        "color": 3
+      },
+      "id": "sticky-auth",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [40, 40]
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get CronJobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get CronJobs": {
+      "main": [
+        [
+          {
+            "node": "Get Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Jobs": {
+      "main": [
+        [
+          {
+            "node": "Analyze CronJob Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze CronJob Health": {
+      "main": [
+        [
+          {
+            "node": "Needs Alert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Alert?": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Alert Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
