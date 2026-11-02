@@ -11,7 +11,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## OpenShift CronJob Monitor\n\n**What it does**\n1. Runs on a schedule\n2. Reads CronJobs + recent Jobs from your OpenShift project\n3. Emails you if a watched CronJob failed or looks missed\n\n**Edit these first**\n1. **Config** node — API URL, namespace, cronjob names, email, thresholds\n2. Create an n8n **Header Auth** credential named `OpenShift SA Token`\n   - Name: `Authorization`\n   - Value: `Bearer <service-account-token>`\n3. Create an n8n **SMTP** credential (or swap the Email node for Gmail/Outlook)\n4. Activate the workflow\n\n**OpenShift SA needs** `get/list` on `cronjobs` and `jobs` in the target namespace.",
+        "content": "## OpenShift CronJob Monitor\n\n**What it does**\n1. Runs on a schedule\n2. Reads CronJobs + recent Jobs from your OpenShift project\n3. Emails you if a watched CronJob failed or looks missed\n\n**Edit these first**\n1. **Config** node — API URL, namespace, cronjob names, email, thresholds\n2. Create an n8n **Header Auth** credential named `OpenShift SA Token`\n   - Name: `Authorization`\n   - Value: `Bearer <service-account-token>`\n3. Create an n8n **SMTP** credential (or swap the Email node for Gmail/Outlook)\n4. Activate the workflow\n\n**RBAC:** SA `oit-sdm-hsit-n8n:n8n-pod-monitor` needs `get/list` on `cronjobs`+`jobs` in `oit-sdm-hsit-examcalendarservice`. Apply `n8n/openshift-rbac-cronjob-monitor.yaml`.",
         "height": 460,
         "width": 420,
         "color": 5
@@ -55,7 +55,7 @@
             {
               "id": "cfg-ns",
               "name": "namespace",
-              "value": "your-project-name",
+              "value": "oit-sdm-hsit-examcalendarservice",
               "type": "string"
             },
             {
@@ -291,9 +291,9 @@
     },
     {
       "parameters": {
-        "content": "## Auth setup (OpenShift)\n\n```bash\noc create sa n8n-cron-monitor -n your-project-name\noc policy add-role-to-user view system:serviceaccount:your-project-name:n8n-cron-monitor -n your-project-name\noc create token n8n-cron-monitor -n your-project-name --duration=8760h\n```\n\nPut the token in n8n Header Auth as:\n`Authorization: Bearer <token>`\n\nAPI URL example:\n`https://api.cluster.example.com:6443`",
-        "height": 360,
-        "width": 420,
+        "content": "## Auth setup (OpenShift)\n\nYour n8n SA is in a **different** project than the CronJobs, so `view` in the n8n project is not enough.\n\nApply RBAC in the CronJob project:\n```bash\noc apply -f n8n/openshift-rbac-cronjob-monitor.yaml\n```\n\nThat binds `oit-sdm-hsit-n8n/n8n-pod-monitor` to list `cronjobs` + `jobs` in `oit-sdm-hsit-examcalendarservice`.\n\nVerify:\n```bash\noc auth can-i list cronjobs.batch \\\n  --as=system:serviceaccount:oit-sdm-hsit-n8n:n8n-pod-monitor \\\n  -n oit-sdm-hsit-examcalendarservice\n```\n\nToken for n8n Header Auth:\n`Authorization: Bearer <token>`",
+        "height": 480,
+        "width": 460,
         "color": 3
       },
       "id": "sticky-auth",
